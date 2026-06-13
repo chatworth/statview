@@ -1,0 +1,9 @@
+{
+  "name": "statview",
+  "version": "1.0.0",
+  "private": true,
+  "description": "StatView — Live scores, logs & stats powered by ESPN public API",
+  "scripts": {
+    "dev": "npx serve public -l 3000"
+  }
+}
