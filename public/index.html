@@ -2546,26 +2546,50 @@
         return r.json();
       }
 
-      /* ─── DATA LOADING — SMART: only pinned leagues for "all" view ─── */
+      /* ─── DATA LOADING — ALL leagues ─── */
+      async function fetchBatch(items, fn, concurrency = 8) {
+        const results = [];
+        for (let i = 0; i < items.length; i += concurrency) {
+          const batch = items.slice(i, i + concurrency);
+          const r = await Promise.allSettled(batch.map(fn));
+          results.push(...r);
+        }
+        return results;
+      }
+
       async function loadAllScores() {
         const sp = SPORTS[S.sport];
         let leagues;
         if (S.league === "all") {
-          leagues = sp.leagues.filter((l) => l.pin);
+          leagues = sp.leagues;
         } else {
           leagues = sp.leagues.filter((l) => l.id === S.league);
         }
         const ds = dateStr(S.day);
         if (!DATA[S.sport]) DATA[S.sport] = {};
 
-        const results = await Promise.allSettled(
-          leagues.map(async (lg) => {
+        const total = leagues.length;
+        let loaded = 0;
+        if (total > 6) {
+          document.getElementById("content").innerHTML =
+            `<div class="empty"><b>Loading leagues… 0/${total}</b></div>`;
+        }
+
+        const results = await fetchBatch(
+          leagues,
+          async (lg) => {
             const raw = await fetchScores(S.sport, lg.id, ds);
             const events = raw ? parseEvents(raw) : [];
             const lmeta = raw?.leagues?.[0] || {};
             DATA[S.sport][lg.id] = { events, meta: lmeta, league: lg };
+            loaded++;
+            if (total > 6) {
+              document.getElementById("content").innerHTML =
+                `<div class="empty"><b>Loading leagues… ${loaded}/${total}</b></div>`;
+            }
             return { lg, events };
-          }),
+          },
+          8,
         );
 
         LIVE_IDS = [];
@@ -2630,24 +2654,20 @@
       function renderSidebar() {
         const sp = SPORTS[S.sport];
         const q = sidebarFilter.toLowerCase();
-        const pins = sp.leagues.filter((l) => l.pin);
-        const rest = sp.leagues.filter((l) => !l.pin);
         const match = (l) =>
           !q ||
           l.name.toLowerCase().includes(q) ||
           l.cty.toLowerCase().includes(q) ||
           (l.flag && l.flag.includes(q));
         const btn = (l) =>
-          `<button class="lg-btn ${S.league === l.id ? "on" : ""}" onclick="setLeague('${l.id}')" title="${l.name} — ${l.cty}"><span class="flag">${l.flag}</span>${l.name}${l.pin ? '<span class="pin">★</span>' : ""}</button>`;
-        const filteredPins = pins.filter(match);
-        const filteredRest = rest.filter(match);
+          `<button class="lg-btn ${S.league === l.id ? "on" : ""}" onclick="setLeague('${l.id}')" title="${l.name} — ${l.cty}"><span class="flag">${l.flag}</span>${l.name}</button>`;
+        const filtered = sp.leagues.filter(match);
         document.getElementById("sidebar").innerHTML =
           `<button class="side-close" onclick="closeSidebar()" aria-label="Close menu">✕</button>
      <input class="side-search" type="text" placeholder="Search ${sp.leagues.length} leagues…" value="${sidebarFilter}" oninput="filterSidebar(this.value)">
-     ${filteredPins.length ? "<h3>Pinned</h3>" + filteredPins.map(btn).join("") : ""}
-     <h3>Competitions (${filteredRest.length})</h3>
-     <button class="lg-btn ${S.league === "all" ? "on" : ""}" onclick="setLeague('all')"><span class="flag">◉</span>All pinned leagues</button>
-     ${filteredRest.map(btn).join("")}`;
+     <button class="lg-btn ${S.league === "all" ? "on" : ""}" onclick="setLeague('all')"><span class="flag">◉</span>All Leagues</button>
+     <h3>Competitions (${filtered.length})</h3>
+     ${filtered.map(btn).join("")}`;
       }
       window.toggleSidebar = function () {
         document.getElementById("sidebar").classList.toggle("open");
@@ -2673,7 +2693,7 @@
         const d = DATA[S.sport] || {};
         const leagues =
           S.league === "all"
-            ? sp.leagues.filter((l) => l.pin)
+            ? sp.leagues
             : sp.leagues.filter((l) => l.id === S.league);
         const all = [];
         leagues.forEach((lg) => {
@@ -2747,7 +2767,7 @@
         const d = DATA[S.sport] || {};
         const leagues =
           S.league === "all"
-            ? sp.leagues.filter((l) => l.pin)
+            ? sp.leagues
             : sp.leagues.filter((l) => l.id === S.league);
         let html = "";
         for (const lg of leagues) {
